@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,8 +7,26 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION)
+    app = FastAPI(
+        title=settings.APP_NAME,
+        version=settings.APP_VERSION,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        lifespan=lifespan,
+        openapi_tags=[
+            {"name": "auth", "description": "Authentication endpoints"},
+            {"name": "users", "description": "User management"},
+            {"name": "books", "description": "Book management"},
+            {"name": "borrows", "description": "Borrow management"},
+            {"name": "roles", "description": "Role management"},
+        ],
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -25,4 +45,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
