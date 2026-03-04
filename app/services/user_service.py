@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.permissions import RoleName
 from app.core.security import hash_password
@@ -29,18 +30,30 @@ async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
     db.add(db_user)
     await db.flush()
     await db.refresh(db_user)
-    return db_user
 
-
-async def get_all_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[User]:
     result = await db.execute(
-        select(User).order_by(User.id).offset(skip).limit(limit)
+        select(User).options(selectinload(User.role)).where(User.id == db_user.id)
+    )
+    return result.scalar_one()
+
+
+async def get_all_users(
+    db: AsyncSession, skip: int = 0, limit: int = 100
+) -> List[User]:
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.role))
+        .order_by(User.id)
+        .offset(skip)
+        .limit(limit)
     )
     return list(result.scalars().all())
 
 
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User).options(selectinload(User.role)).where(User.id == user_id)
+    )
     return result.scalar_one_or_none()
 
 
@@ -73,7 +86,11 @@ async def update_user(
 
     await db.flush()
     await db.refresh(db_user)
-    return db_user
+
+    result = await db.execute(
+        select(User).options(selectinload(User.role)).where(User.id == db_user.id)
+    )
+    return result.scalar_one_or_none()
 
 
 async def delete_user(db: AsyncSession, user_id: int) -> bool:
