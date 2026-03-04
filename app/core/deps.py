@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable, Sequence
+from typing import Sequence
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Security, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.permissions import Permission
@@ -15,18 +16,17 @@ from app.db.session import get_db
 from app.models import APIKey, Role, User
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 
 
 async def get_current_user(
     db: AsyncSession = Depends(get_db),
-    authorization: str | None = Header(default=None, alias="Authorization"),
+    authorization: str | None = Security(oauth2_scheme),
     api_key_header: str | None = Header(default=None, alias="X-API-Key"),
 ) -> User:
     # Prefer Bearer token if present
-    if authorization and authorization.lower().startswith("bearer "):
-        token = authorization.split(" ", 1)[1]
-        payload = decode_token(token)
+    if authorization:
+        payload = decode_token(authorization)
         if payload.get("type") != "access":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -38,7 +38,9 @@ async def get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
             )
-        result = await db.execute(select(User).where(User.id == int(user_id)))
+        result = await db.execute(
+            select(User).options(selectinload(User.role)).where(User.id == int(user_id))
+        )
         user = result.scalar_one_or_none()
         if not user or not user.is_active:
             raise HTTPException(
@@ -56,7 +58,9 @@ async def get_current_user(
             )
         key_hash = hash_api_key(api_key_header)
         result = await db.execute(
-            select(APIKey).where(APIKey.key_hash == key_hash, APIKey.is_active.is_(True))
+            select(APIKey).where(
+                APIKey.key_hash == key_hash, APIKey.is_active.is_(True)
+            )
         )
         api_key = result.scalar_one_or_none()
         if not api_key:
@@ -115,4 +119,3 @@ def require_permissions(required: Sequence[Permission]):
         return current_user
 
     return dependency
-
